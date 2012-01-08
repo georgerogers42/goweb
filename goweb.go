@@ -6,16 +6,15 @@ import (
 )
 
 type Any interface{}
-type Responder func(http.ResponseWriter, *http.Request, *Result, []string)
-type Router func(http.ResponseWriter, *http.Request, Result) Result
+type Responder func(http.ResponseWriter, *http.Request, Result, ...string) Result
 type Result struct {
 	Final bool
 	State map[string]Any
 }
 
 // Or composes Routers by returning the first final Result of the Routers.
-func Or(rs ...Router) Router {
-	return func(w http.ResponseWriter, c *http.Request, s Result) Result {
+func Or(rs ...Responder) Responder {
+	return func(w http.ResponseWriter, c *http.Request, s Result, _ ...string) Result {
 		for _, r := range rs {
 			s = r(w, c, s)
 			if s.Final {
@@ -28,16 +27,16 @@ func Or(rs ...Router) Router {
 
 // Route returns a new router that matches the pat against
 // the url that is passed in.
-func Route(pat string, f Responder) Router {
+func Route(pat string, f Responder) Responder {
 	r, err := regexp.Compile("^" + pat + "$")
 	if err != nil {
 		panic(err)
 	}
-	return func(w http.ResponseWriter, c *http.Request, s Result) Result {
+	return func(w http.ResponseWriter, c *http.Request, s Result, _ ...string) Result {
 		path := MatchUrl(r, c.URL.Path)
 		if path != nil {
 			s.Final = true
-			f(w, c, &s, path)
+			f(w, c, s, path...)
 			return s
 		}
 		s.Final = false
@@ -57,7 +56,7 @@ func MatchUrl(r *regexp.Regexp, against string) []string {
 func Pass(s *Result) {
 	s.Final = false
 }
-func Handler(route Router) http.HandlerFunc {
+func Handler(route Responder) http.HandlerFunc {
 	return func(w http.ResponseWriter, c *http.Request) {
 		s := Result{Final: false, State: make(map[string]Any)}
 		route(w, c, s)
